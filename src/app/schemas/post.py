@@ -1,9 +1,9 @@
-from typing import Annotated, Optional
+from typing import Annotated
 from datetime import datetime
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.core.models import UUIDModel, TimestampModel, PersistentDeletion
+from ..core.schemas import UUIDSchema, TimestampSchema, PersistentDeletion
 
 class PostBase(BaseModel):
     title: Annotated[
@@ -16,7 +16,7 @@ class PostBase(BaseModel):
     ]
     
 
-class Post(TimestampModel, PostBase, UUIDModel, PersistentDeletion):
+class Post(TimestampSchema, PostBase, UUIDSchema, PersistentDeletion):
     media_url: Annotated[
         str | None, 
         Field(
@@ -66,7 +66,7 @@ class PostCreateInternal(PostCreate):
     created_by_user_id: int
 
 
-class PostUpdate(PostBase):
+class PostUpdate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     title: Annotated[

@@ -1,7 +1,4 @@
-from typing import Annotated
-
-from app.core.security import SECRET_KEY, ALGORITHM, oauth2_scheme
-from app.core.config import settings
+from typing import Annotated, Union, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
@@ -11,17 +8,19 @@ from fastapi import (
     Request
 )
 
-from app.core.database import async_get_db
-from app.core.models import TokenData
-from app.core.rate_limit import is_rate_limited
-from app.core.logger import logging
-from app.models.user import User
-from app.api.exceptions import credentials_exception, privileges_exception
-from app.crud.crud_users import crud_users
-from app.crud.crud_tier import crud_tiers
-from app.crud.crud_rate_limit import crud_rate_limits
-from app.schemas.rate_limit import sanitize_path
-
+from ..core.security import oauth2_scheme
+from ..core.config import settings
+from ..core.exceptions.http_exceptions import UnauthorizedException, ForbiddenException, RateLimitException
+from ..core.db.database import async_get_db
+from ..core.logger import logging
+from ..core.schemas import TokenData
+from ..core.utils.rate_limit import is_rate_limited
+from ..core.security import verify_token
+from ..crud.crud_rate_limit import crud_rate_limits
+from ..crud.crud_tier import crud_tiers
+from ..crud.crud_users import crud_users
+from ..models.user import User
+from ..schemas.rate_limit import sanitize_path
 
 logger = logging.getLogger(__name__)
 
@@ -31,32 +30,26 @@ DEFAULT_PERIOD = settings.DEFAULT_RATE_LIMIT_PERIOD
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Annotated[AsyncSession, Depends(async_get_db)]
-) -> User:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username_or_email: str = payload.get("sub")
-        if username_or_email is None:
-            raise credentials_exception
-        token_data = TokenData(username_or_email=username_or_email)
-    
-    except JWTError:
-        raise credentials_exception
-    
-    if "@" in username_or_email:
-        user = await crud_users.get(db=db, email=token_data.username_or_email)
+) -> Union[dict[str, Any], None]:
+    token_data = await verify_token(token, db)
+    if token_data is None:
+        raise UnauthorizedException("User not authenticated.")
+
+    if "@" in token_data.username_or_email:
+        user: dict | None = await crud_users.get(db=db, email=token_data.username_or_email, is_deleted=False)
     else: 
-        user = await crud_users.get(db=db, username=token_data.username_or_email)
+        user = await crud_users.get(db=db, username=token_data.username_or_email, is_deleted=False)
     
-    if user and not user["is_deleted"]:
+    if user:
         return user
-    
-    raise credentials_exception
+
+    raise UnauthorizedException("User not authenticated.")
 
 
 async def get_optional_user(
     request: Request,
     db: AsyncSession = Depends(async_get_db)
-) -> User | None:
+) -> dict | None:
     token = request.headers.get("Authorization")
     if not token:
         return None
@@ -66,7 +59,11 @@ async def get_optional_user(
         if token_type.lower() != 'bearer' or not token_value:
             return None
 
-        return await get_current_user(token_value, db)
+        token_data = await verify_token(token_value, db)
+        if token_data is None:
+            return None
+
+        return await get_current_user(token_value, db=db)
     
     except HTTPException as http_exc:
         if http_exc.status_code != 401:
@@ -75,12 +72,12 @@ async def get_optional_user(
     
     except Exception as exc:
         logger.error(f"Unexpected error in get_optional_user: {exc}")
-        return None    
+        return None
 
 
-async def get_current_superuser(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+async def get_current_superuser(current_user: Annotated[dict, Depends(get_current_user)]) -> dict:
     if not current_user["is_superuser"]:
-        raise privileges_exception
+        raise ForbiddenException("You do not have enough privileges.")
     
     return current_user
 
@@ -89,7 +86,7 @@ async def rate_limiter(
     request: Request,
     db: Annotated[AsyncSession, Depends(async_get_db)],
     user: User | None = Depends(get_optional_user)
-):
+) -> None:
     path = sanitize_path(request.url.path)
     if user:
         user_id = user["id"]
@@ -120,7 +117,4 @@ async def rate_limiter(
         period=period
     )
     if is_limited:
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded"
-        )
+        raise RateLimitException("Rate limit exceeded.")

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-from app.core.models import UUIDModel, TimestampModel, PersistentDeletion
+from ..core.schemas import UUIDSchema, TimestampSchema, PersistentDeletion
 
 class UserBase(BaseModel):
     name: Annotated[
@@ -20,7 +20,7 @@ class UserBase(BaseModel):
     ]
 
 
-class User(TimestampModel, UserBase, UUIDModel, PersistentDeletion):
+class User(TimestampSchema, UserBase, UUIDSchema, PersistentDeletion):
     profile_image_url: Annotated[
         str, 
         Field(default="https://www.profileimageurl.com")
@@ -32,7 +32,6 @@ class User(TimestampModel, UserBase, UUIDModel, PersistentDeletion):
 
 class UserRead(BaseModel):
     id: int
-    tier_id: int
     
     name: Annotated[
         str, 

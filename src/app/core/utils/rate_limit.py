@@ -3,15 +3,13 @@ from datetime import datetime
 from redis.asyncio import Redis, ConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logger import logging
-from app.schemas.rate_limit import sanitize_path
+from ...core.logger import logging
+from ...schemas.rate_limit import sanitize_path
 
 logger = logging.getLogger(__name__)
 
 pool: ConnectionPool | None = None
 client: Redis | None = None
-
-logger = logging.getLogger(__name__)
 
 async def is_rate_limited(
     db: AsyncSession,

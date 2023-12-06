@@ -1,19 +1,20 @@
-from typing import Annotated
+from typing import Annotated, Dict
 
-from fastapi import Request, Depends, HTTPException
+from fastapi import Request, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 import fastapi
 
-from app.schemas.tier import (
+from ...schemas.tier import (
     TierRead,
     TierCreate,
     TierCreateInternal,
     TierUpdate
 )
-from app.api.dependencies import get_current_superuser
-from app.core.database import async_get_db
-from app.crud.crud_tier import crud_tiers
-from app.api.paginated import PaginatedListResponse, paginated_response, compute_offset
+from ...api.dependencies import get_current_superuser
+from ...core.db.database import async_get_db
+from ...core.exceptions.http_exceptions import DuplicateValueException, NotFoundException
+from ...crud.crud_tier import crud_tiers
+from ...api.paginated import PaginatedListResponse, paginated_response, compute_offset
 
 router = fastapi.APIRouter(tags=["tiers"])
 
@@ -22,11 +23,11 @@ async def write_tier(
     request: Request, 
     tier: TierCreate, 
     db: Annotated[AsyncSession, Depends(async_get_db)]
-):  
+) -> TierRead:
     tier_internal_dict = tier.model_dump()
     db_tier = await crud_tiers.exists(db=db, name=tier_internal_dict["name"])
     if db_tier:
-        raise HTTPException(status_code=400, detail="Tier Name not available")
+        raise DuplicateValueException("Tier Name not available")
     
     tier_internal = TierCreateInternal(**tier_internal_dict)
     return await crud_tiers.create(db=db, object=tier_internal)
@@ -38,7 +39,7 @@ async def read_tiers(
     db: Annotated[AsyncSession, Depends(async_get_db)],
     page: int = 1,
     items_per_page: int = 10
-):
+) -> dict:
     tiers_data = await crud_tiers.get_multi(
         db=db,
         offset=compute_offset(page, items_per_page),
@@ -58,10 +59,10 @@ async def read_tier(
     request: Request,
     name: str, 
     db: Annotated[AsyncSession, Depends(async_get_db)]
-):
+) -> dict:
     db_tier = await crud_tiers.get(db=db, schema_to_select=TierRead, name=name)
     if db_tier is None:
-        raise HTTPException(status_code=404, detail="Tier not found")
+        raise NotFoundException("Tier not found")
 
     return db_tier
 
@@ -72,10 +73,10 @@ async def patch_tier(
     values: TierUpdate,
     name: str,
     db: Annotated[AsyncSession, Depends(async_get_db)]
-):
+) -> Dict[str, str]:
     db_tier = await crud_tiers.get(db=db, schema_to_select=TierRead, name=name)
     if db_tier is None:
-        raise HTTPException(status_code=404, detail="Tier not found")
+        raise NotFoundException("Tier not found")
     
     await crud_tiers.update(db=db, object=values, name=name)
     return {"message": "Tier updated"}
@@ -86,10 +87,10 @@ async def erase_tier(
     request: Request,
     name: str, 
     db: Annotated[AsyncSession, Depends(async_get_db)]
-):
+) -> Dict[str, str]:
     db_tier = await crud_tiers.get(db=db, schema_to_select=TierRead, name=name)
     if db_tier is None:
-        raise HTTPException(status_code=404, detail="Tier not found")
+        raise NotFoundException("Tier not found")
     
     await crud_tiers.delete(db=db, db_row=db_tier, name=name)
     return {"message": "Tier deleted"}

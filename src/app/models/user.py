@@ -1,13 +1,11 @@
-from typing import Optional, List
+from typing import Optional
 import uuid as uuid_pkg
 from datetime import datetime
 
 from sqlalchemy import String, DateTime, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
-from app.models.post import Post
-from app.models.tier import Tier
+from ..core.db.database import Base
 
 class User(Base):
     __tablename__ = "user"
@@ -33,5 +31,4 @@ class User(Base):
     is_deleted: Mapped[bool] = mapped_column(default=False, index=True)
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
-    tier_id: Mapped[int | None] = mapped_column(ForeignKey("tier.id"), index=True, default=None)
-
+    tier_id: Mapped[int | None] = mapped_column(ForeignKey('tier.id'), index=True, default=None, init=False)
